@@ -1,0 +1,494 @@
+Lab 2.1
+Please submit your ex1.c and ex2.c of two exercises 1 and 2.
+
+In exercise 2, each process fork must print 2 required information: Current process name + PID, Children name + PID to verify your code.
+
+#ex1.c
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+pid_t pid;
+int main(){
+    int buff, c[1000];
+    int i=0, k=0;
+    int countp =0, countc =0;
+    FILE *fptr;
+    fptr = fopen("numbers.txt","r");
+    if(fptr == NULL) {
+        printf("Can't open file");
+        return 0;
+    }
+    while(fscanf(fptr, "%d", &buff) == 1) c[k++] = buff;
+
+#ex1_2.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+pid_t B, C, D, E, F, G, I;
+
+int main(int argc, char ** argv) {
+    printf("The ID of A: %d \n", getpid());
+    if(B = fork() == 0){
+        printf("\tB: %d is children of A: %d \n", getpid(), getppid());
+        fflush(stdout);
+        if(E = fork() == 0){
+            printf("\t\tE: %d is children of B: %d \n", getpid(),
+            getppid());
+            fflush(stdout);
+            if(I = fork() == 0) {
+                printf("\t\t\tI: %d is children of E: %d \n",
+                getpid(), getppid());
+                }
+                else {
+                    wait(NULL);
+                    }
+                    fflush(stdout);
+        }
+        else {
+            wait(NULL);
+            if(F = fork() == 0) {
+                printf("\t\tF: %d is children of B: %d \n",
+                getpid(), getppid());
+            }
+            else {
+                wait(NULL);
+            }
+            fflush(stdout);
+        }
+        fflush(stdout);
+    }
+    else {
+        wait(NULL);
+        if(C = fork() == 0){
+            printf("\tC: %d is children of A: %d \n", getpid(),
+            getppid());
+            fflush(stdout);
+            if(G = fork() == 0) {
+                printf("\t\tG: %d is children of C: %d \n",
+                getpid(), getppid());
+            }
+            else {
+                wait(NULL);
+            }
+        }
+        else {
+            wait(NULL);
+            if(D = fork() == 0) {
+                printf("\tD: %d is children of A: %d \n", getpid(),
+                getppid());
+            }
+            else {
+                wait(NULL);
+            }
+            fflush(stdout);
+        }
+        fflush(stdout);
+    }
+return 0;
+}
+
+
+
+Lab 2.2. Please submit your ex1.c and ex1.h of Problem 1
+#ex1.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#include "ex1.h"
+
+#define ERROR_ON_SBRK (void *)-1
+
+info_block *find_free_block(unsigned int size)
+{
+    info_block *cur = head;
+
+    while (cur)
+    {
+        if (cur->is_free && cur->size >= size)
+            return cur; // free block meet size requirement
+        cur = cur->next;
+    }
+
+    return NULL;
+}
+
+void *allocate_aligned_block(unsigned int size, unsigned int align)
+{
+    void *p_cur, *p_block, *p_info_block;
+    int cur, offset;
+
+    // allocate block for info block
+    if (sbrk(sizeof(info_block)) == ERROR_ON_SBRK)
+        return NULL;
+
+    p_cur = sbrk(0);
+    cur = (uintptr_t)p_cur;
+
+    // Get offset
+    offset = cur % align;
+    if (offset > 0)
+        offset = align - offset;
+
+    // increase offset to align
+    if (sbrk(offset) == ERROR_ON_SBRK)
+        return NULL;
+
+    // get pointer to block
+    p_block = sbrk(0);
+
+    // increase block size
+    if (sbrk(size) == ERROR_ON_SBRK)
+        return NULL;
+
+    // info block is behind block
+    p_info_block = p_block - sizeof(info_block);
+
+    return p_info_block;
+}
+
+void *aligned_malloc(unsigned int size, unsigned int align)
+{
+    void *return_block;
+    info_block *info;
+    void *new_block;
+
+    // find in current list have free block meet size requirement.
+    info = find_free_block(size);
+    if (info)
+    {
+        // Found here
+        info->is_free = 0; // not free now
+        return_block = (void *)(info + 1);
+        printf("Old block: Info at %lu - Block at %lu\n", (uintptr_t)info, (uintptr_t)return_block);
+        return return_block;
+    }
+
+    // Not found any good free block
+
+    // new block allocated with size must have info_block
+    new_block = allocate_aligned_block(size, align);
+
+    if (new_block == NULL)
+        return NULL; // cannot allocate new block
+
+    // store info block
+    info = new_block;
+    info->size = size;
+    info->is_free = 0;
+    info->next = NULL;
+
+    // Update state of list via head and tail
+    if (!head)
+        head = info;
+    if (tail)
+        tail->next = info;
+    tail = info;
+
+    // Return new block
+    return_block = (void *)(info + 1);
+    printf("New block: Info at %lu - Block at %lu\n", (uintptr_t)info, (uintptr_t)return_block);
+    return return_block;
+}
+
+void * aligned_free(void *block)
+{
+
+    info_block *info;
+    info_block *tmp;
+    void *program_break;
+
+    if (!block) return NULL;
+
+    // retrive block info
+    info = (info_block *)block - 1;
+    // get current program break;
+    program_break = sbrk(0);
+
+    // block to free is the last block in list, should update *tail and program break
+    if (block + info->size == program_break)
+    {
+        if (head == tail)
+            // no any left blocks
+            head = tail = NULL;
+        else
+        {
+            tmp = head;
+            // find the block point to end block
+            while (tmp)
+            {
+                if (tmp->next == tail)
+                {
+                    tmp->next = NULL;
+                    tail = tmp;
+                }
+                tmp = tmp->next;
+            }
+        }
+        // release memory of last block to OS
+        sbrk(0 - sizeof(info_block) - info->size);
+        printf("Release memory to OS\n");
+        return sbrk(0);
+    }
+
+    // block to free is internal list, only update status free of info_block
+    info->is_free = 1;
+    return sbrk(0);
+
+#ex1.h
+#define ALIGNED_MALLOC_FREE_SYSCALL
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+// Store info about block
+typedef struct info_block
+{
+    int size;
+    int is_free;
+    struct info_block *next;
+} info_block;
+
+// Linked list allocated block
+static info_block *head, *tail;
+
+void * aligned_malloc(unsigned int size, unsigned int align);
+
+void * aligned_free(void * ptr);
+
+Lab 2.3. Please submit your Lab 2 (section 3) excercise Note: Problem1: Please print your result using the following format:
+
+Pi: 3.141302
+Time: 0.262922 seconds
+which time is printed as microseconds. You should submit the following files: code.c -> ordinal thread pi_multi-thread.c & pi_serial.c -> Pi with Monte Carlo
+
+#code.c
+#include <stdio.h>
+#include <pthread.h>
+void *hello(void *tid)
+{
+    printf("Hello from thread %d\n", (int) tid);
+    pthread_exit(NULL);
+}
+ 
+int main()
+{
+    pthread_t tid[10];
+    int i;
+    for(i = 0; i < 10; i++)
+    {
+        pthread_create(&tid[i], NULL, hello, (void*)i);
+        pthread_join(tid[i], NULL);
+    }
+    pthread_exit(NULL);
+}
+
+
+#pi_multi-thread.c
+#include <stdlib.h>
+#include <stdio.h>
+#include <pthread.h>
+#include <time.h>
+ 
+ 
+unsigned int inCircle = 0, total = 0, perThread = 0, numThreads = 2;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+ 
+void *runner(void *param)
+{
+  unsigned int rand_state = random() - RAND_MAX / 2 - 1;
+  unsigned int inThread = 0;
+ 
+  for (unsigned int i = 0; i++ < perThread;)
+  {
+    double x = 1.0 * rand_r(&rand_state) / RAND_MAX;
+    double y = 1.0 * rand_r(&rand_state) / RAND_MAX;
+ 
+    if (x*x + y*y <= 1.0 * 1.0)
+      inThread += 1;
+  }
+ 
+ 
+  pthread_mutex_lock(&mutex);
+  inCircle += inThread;
+  pthread_mutex_unlock(&mutex);
+ 
+  pthread_exit(NULL);
+  return NULL;
+}
+ 
+int main(int argc, char **argv)
+{
+  if (argc == 2 && argv[1] > 0)
+  {
+    total = atoi(argv[1]);
+  }
+  else if (argc == 3 && argv[1] > 0 && argv[2] > 0)
+  {
+    total = atoi(argv[1]);
+    numThreads = atoi(argv[2]);
+  }
+  else
+    return -1;
+ 
+  clock_t start = clock();
+ 
+  pthread_t pid[numThreads];
+  pthread_attr_t attr;
+  pthread_attr_init(&attr);
+ 
+  perThread = 1 + total / numThreads;
+  for (unsigned int i = 0; i < numThreads; i++)
+    if (pthread_create(&pid[i], &attr, runner, NULL) != 0)
+      return -1;
+  for (unsigned int i = 0; i < numThreads; i++)
+    pthread_join(pid[i], NULL);
+ 
+  double result = 4.0 * inCircle / total;
+  clock_t end = clock();
+  double elapsed = 1.0 * (end - start) / CLOCKS_PER_SEC;
+ 
+  printf("Pi = %lf\n", result);
+  printf("Time taken = %lf seconds\n", elapsed);
+  return 0;
+}
+ 
+
+#pi_serial.c
+#include <stdlib.h>
+#include <stdio.h>
+#include <time.h>
+ 
+int main(int argc, char **argv)
+{
+  if (argc != 2 || atoi(argv[1]) < 0)
+    return -1;
+ 
+  clock_t start = clock();
+ 
+  int inCircle = 0, total = atoi(argv[1]);
+ 
+  for (int i = 0; i++ < total;)
+  {
+    double x = 1.0 * rand() / RAND_MAX;
+    double y = 1.0 * rand() / RAND_MAX;
+    if (x * x + y * y <= 1)
+      inCircle += 1;
+  }
+ 
+  double result = 4.0 * inCircle / total;
+  clock_t end = clock();
+  double elapsed = 1.0 * (end - start) / CLOCKS_PER_SEC;
+  printf("Pi = %lf\n", result);
+  printf("Time taken = %lf seconds\n", elapsed);
+  return 0;
+}
+ 
+
+
+Lab 3. Please submit your Lab 3 exercise Note: Please print your result using the following format:
+
+Pi: 3.141302
+Time: 0.262922 seconds
+which time is printed as microseconds
+
+Submit 2 file: pi_shared.c -> use shared global variable pi_private.c -> the old version in the previous lab
+
+#pi_private.c
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#define NThread 100
+
+void* genPoint(void* p){
+	double x, y;
+	unsigned int seed = rand();
+	size_t n = 0;
+	for(int i = 0; i < (size_t)p; i++){
+		x = (double)rand_r(&seed) / ((double)RAND_MAX/2);
+		y = (double)rand_r(&seed) / ((double)RAND_MAX/2);
+		if((x-1)*(x-1) + (y-1)*(y-1) < 1) n++;
+	}
+	pthread_exit((void*)n);
+}
+
+int main(int argc, char* argv[]){
+	clock_t start = clock();
+	pthread_t tid[NThread];
+	size_t n = 0;
+	size_t N = atoi(argv[1]);
+	void* rv;
+	for(int i = 0; i < NThread; i++){
+		pthread_create(&tid[i] , NULL, genPoint, (void*)(N/NThread));
+	}
+	for(int i = 0; i < NThread; i++){
+		pthread_join(tid[i], &rv) ;
+		n += (size_t)rv;
+	}
+	double pi = (double)4*n/N;
+
+	clock_t stop = clock();
+	double misecs = ((double)(stop - start)* 1000.0)/CLOCKS_PER_SEC;
+    printf("Pi: %f\nTime: %f ms\n", pi, misecs); 
+}
+
+
+#pi_shared.c
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#define NThread 100
+
+long n = 0;
+pthread_mutex_t mutex;
+
+void* genPoint(void* p){
+	double x, y;
+	unsigned int seed = rand();
+	int count = 0;
+	for(int i = 0; i < (size_t)p; i++){
+		x = (double)rand_r(&seed) / ((double)RAND_MAX/2);
+		y = (double)rand_r(&seed) / ((double)RAND_MAX/2);
+		if((x-1)*(x-1) + (y-1)*(y-1) < 1) count++;
+	}
+
+    pthread_mutex_lock(&mutex);
+    n+=count;
+    pthread_mutex_unlock(&mutex);
+	pthread_exit((void*)n);
+}
+
+int main(int argc, char* argv[]){
+	clock_t start = clock();
+	pthread_t tid[NThread];
+
+	size_t N = atoi(argv[1]);
+	void* rv;
+
+    pthread_mutex_init(&mutex,NULL);
+
+	for(int i = 0; i < NThread; i++){
+		pthread_create(&tid[i] , NULL, genPoint, (void*)(N/NThread));
+	}
+
+	for(int i = 0; i < NThread; i++){
+		pthread_join(tid[i], &rv) ;
+	}
+	double pi = (double)4*n/N;
+    
+    pthread_mutex_destroy(&mutex);
+	clock_t stop = clock();
+	double misecs = ((double)(stop - start)* 1000.0)/CLOCKS_PER_SEC;
+    printf("Pi: %f\nTime: %f ms\n", pi, misecs); 
+}
